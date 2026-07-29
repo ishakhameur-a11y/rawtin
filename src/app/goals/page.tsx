@@ -4,15 +4,16 @@ import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import {
   Plus,
-  Trash2,
   Check,
   CalendarDays,
   CalendarRange,
   Calendar,
   X,
+  Pencil,
+  Trash2,
 } from "lucide-react";
 import { useLocalStorage } from "@/lib/useLocalStorage";
-import { Goal, GoalPeriod, PERIOD_META, goalProgress } from "@/lib/goals";
+import { Goal, GoalStep, GoalPeriod, PERIOD_META, goalProgress } from "@/lib/goals";
 
 const PERIOD_ICONS: Record<GoalPeriod, typeof CalendarDays> = {
   weekly: CalendarDays,
@@ -22,33 +23,91 @@ const PERIOD_ICONS: Record<GoalPeriod, typeof CalendarDays> = {
 
 const PERIOD_ORDER: GoalPeriod[] = ["weekly", "monthly", "yearly"];
 
+function Sheet({
+  title,
+  onClose,
+  children,
+}: {
+  title: string;
+  onClose: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="absolute inset-0 z-40 flex items-end">
+      <div onClick={onClose} className="absolute inset-0 bg-black/45" />
+      <motion.div
+        initial={{ y: "100%" }}
+        animate={{ y: 0 }}
+        exit={{ y: "100%" }}
+        transition={{ type: "spring", damping: 30, stiffness: 300 }}
+        className="relative z-10 max-h-[85vh] w-full overflow-y-auto rounded-t-[26px] px-5 pb-7 pt-2.5"
+        style={{ backgroundColor: "var(--bg)", boxShadow: "0 -8px 30px rgba(0,0,0,0.25)" }}
+      >
+        <div
+          className="mx-auto mb-4 h-1 w-9 rounded-full"
+          style={{ backgroundColor: "var(--border)" }}
+        />
+        <h2 className="mb-4 text-center text-base font-bold">{title}</h2>
+        {children}
+      </motion.div>
+    </div>
+  );
+}
+
 export default function GoalsPage() {
   const [goals, setGoals, loaded] = useLocalStorage<Goal[]>("rawtin-goals", []);
   const [activePeriod, setActivePeriod] = useState<GoalPeriod>("weekly");
   const [openGoal, setOpenGoal] = useState<string | null>(null);
-  const [isAddingGoal, setIsAddingGoal] = useState(false);
-  const [newGoalTitle, setNewGoalTitle] = useState("");
-  const [newStepText, setNewStepText] = useState("");
 
-  function addGoal() {
-    if (!newGoalTitle.trim()) {
-      setIsAddingGoal(false);
-      return;
-    }
+  const [addOpen, setAddOpen] = useState(false);
+  const [addTitle, setAddTitle] = useState("");
+  const [addSteps, setAddSteps] = useState<string[]>([""]);
+
+  const [editingGoal, setEditingGoal] = useState<Goal | null>(null);
+  const [editTitle, setEditTitle] = useState("");
+  const [editSteps, setEditSteps] = useState<GoalStep[]>([]);
+
+  function openAdd() {
+    setAddTitle("");
+    setAddSteps([""]);
+    setAddOpen(true);
+  }
+
+  function confirmAdd() {
+    if (!addTitle.trim()) return;
+    const steps: GoalStep[] = addSteps
+      .filter((s) => s.trim())
+      .map((s, i) => ({ id: crypto.randomUUID() + i, text: s.trim(), done: false }));
     const goal: Goal = {
       id: crypto.randomUUID(),
       period: activePeriod,
-      title: newGoalTitle.trim(),
+      title: addTitle.trim(),
       createdAt: new Date().toISOString(),
-      steps: [],
+      steps,
     };
     setGoals((prev) => [...prev, goal]);
-    setNewGoalTitle("");
-    setIsAddingGoal(false);
+    setAddOpen(false);
   }
 
-  function deleteGoal(id: string) {
-    setGoals((prev) => prev.filter((g) => g.id !== id));
+  function openEdit(goal: Goal) {
+    setEditingGoal(goal);
+    setEditTitle(goal.title);
+    setEditSteps(goal.steps.map((s) => ({ ...s })));
+  }
+
+  function confirmEdit() {
+    if (!editTitle.trim() || !editingGoal) return;
+    const steps = editSteps.filter((s) => s.text.trim());
+    setGoals((prev) =>
+      prev.map((g) => (g.id === editingGoal.id ? { ...g, title: editTitle.trim(), steps } : g))
+    );
+    setEditingGoal(null);
+  }
+
+  function confirmDeleteGoal() {
+    if (!editingGoal) return;
+    setGoals((prev) => prev.filter((g) => g.id !== editingGoal.id));
+    setEditingGoal(null);
   }
 
   function toggleStep(goalId: string, stepId: string) {
@@ -57,41 +116,11 @@ export default function GoalsPage() {
         g.id === goalId
           ? {
               ...g,
-              steps: g.steps.map((s) =>
-                s.id === stepId ? { ...s, done: !s.done } : s
-              ),
+              steps: g.steps.map((s) => (s.id === stepId ? { ...s, done: !s.done } : s)),
             }
           : g
       )
     );
-  }
-
-  function deleteStep(goalId: string, stepId: string) {
-    setGoals((prev) =>
-      prev.map((g) =>
-        g.id === goalId
-          ? { ...g, steps: g.steps.filter((s) => s.id !== stepId) }
-          : g
-      )
-    );
-  }
-
-  function addStep(goalId: string) {
-    if (!newStepText.trim()) return;
-    setGoals((prev) =>
-      prev.map((g) =>
-        g.id === goalId
-          ? {
-              ...g,
-              steps: [
-                ...g.steps,
-                { id: crypto.randomUUID(), text: newStepText.trim(), done: false },
-              ],
-            }
-          : g
-      )
-    );
-    setNewStepText("");
   }
 
   const periodGoals = goals.filter((g) => g.period === activePeriod);
@@ -99,11 +128,21 @@ export default function GoalsPage() {
   if (!loaded) return null;
 
   return (
-    <div className="px-5 pt-6">
-      <h1 className="text-xl font-bold">الأهداف</h1>
-      <p className="mb-4.5 text-sm" style={{ color: "var(--text-muted)" }}>
-        {goals.length} هدف قيد التنفيذ
-      </p>
+    <div className="relative min-h-full px-5 pt-6">
+      {/* Header: title centered, + button on the right */}
+      <div className="relative mb-4.5 flex items-center justify-center">
+        <h1 className="text-lg font-bold">الأهداف</h1>
+        <button
+          onClick={openAdd}
+          className="absolute right-0 top-1/2 flex h-9 w-9 -translate-y-1/2 items-center justify-center rounded-xl text-white"
+          style={{
+            backgroundColor: "var(--accent)",
+            boxShadow: "0 4px 12px color-mix(in srgb, var(--accent) 35%, transparent)",
+          }}
+        >
+          <Plus size={20} />
+        </button>
+      </div>
 
       {/* Horizontal period selector */}
       <div className="mb-4.5 flex gap-2">
@@ -138,7 +177,7 @@ export default function GoalsPage() {
 
       {/* Selected period content */}
       <div className="flex flex-col gap-2">
-        {periodGoals.length === 0 && !isAddingGoal && (
+        {periodGoals.length === 0 && (
           <p className="my-5 text-center text-[13px]" style={{ color: "var(--text-muted)" }}>
             ما فيه أهداف بهذه الفترة بعد.
           </p>
@@ -194,74 +233,36 @@ export default function GoalsPage() {
                           ما فيه خطوات بعد.
                         </p>
                       )}
-                      <AnimatePresence initial={false}>
-                        {goal.steps.map((step) => (
-                          <motion.div
-                            key={step.id}
-                            layout
-                            initial={{ opacity: 0 }}
-                            animate={{ opacity: 1 }}
-                            exit={{ opacity: 0, x: 20 }}
-                            className="flex items-center justify-between py-1.5"
+                      {goal.steps.map((step) => (
+                        <div key={step.id} className="flex items-center gap-2 py-1.5">
+                          <button
+                            onClick={() => toggleStep(goal.id, step.id)}
+                            className="flex h-[18px] w-[18px] flex-shrink-0 items-center justify-center rounded-md border-2"
+                            style={{
+                              borderColor: step.done ? "var(--accent)" : "var(--border)",
+                              backgroundColor: step.done ? "var(--accent)" : "transparent",
+                            }}
                           >
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => toggleStep(goal.id, step.id)}
-                                className="flex h-[18px] w-[18px] items-center justify-center rounded-md border-2"
-                                style={{
-                                  borderColor: step.done ? "var(--accent)" : "var(--border)",
-                                  backgroundColor: step.done ? "var(--accent)" : "transparent",
-                                }}
-                              >
-                                {step.done && <Check size={11} color="#fff" strokeWidth={3} />}
-                              </button>
-                              <span
-                                className="text-[13px]"
-                                style={{
-                                  color: step.done ? "var(--text-muted)" : "var(--text)",
-                                  textDecoration: step.done ? "line-through" : "none",
-                                }}
-                              >
-                                {step.text}
-                              </span>
-                            </div>
-                            <button onClick={() => deleteStep(goal.id, step.id)} className="opacity-40">
-                              <X size={13} color="var(--danger)" />
-                            </button>
-                          </motion.div>
-                        ))}
-                      </AnimatePresence>
-
-                      <div className="mt-1 flex gap-1.5">
-                        <input
-                          value={newStepText}
-                          onChange={(e) => setNewStepText(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") addStep(goal.id);
-                          }}
-                          placeholder="خطوة جديدة..."
-                          className="flex-1 rounded-[10px] border px-2.5 py-1.5 text-[12.5px] outline-none"
-                          style={{
-                            borderColor: "var(--border)",
-                            backgroundColor: "var(--bg)",
-                            color: "var(--text)",
-                          }}
-                        />
-                        <button
-                          onClick={() => addStep(goal.id)}
-                          className="rounded-[10px] px-3 text-xs text-white"
-                          style={{ backgroundColor: "var(--accent)" }}
-                        >
-                          إضافة
-                        </button>
-                      </div>
+                            {step.done && <Check size={11} color="#fff" strokeWidth={3} />}
+                          </button>
+                          <span
+                            className="text-[13px]"
+                            style={{
+                              color: step.done ? "var(--text-muted)" : "var(--text)",
+                              textDecoration: step.done ? "line-through" : "none",
+                            }}
+                          >
+                            {step.text}
+                          </span>
+                        </div>
+                      ))}
 
                       <button
-                        onClick={() => deleteGoal(goal.id)}
-                        className="mt-1.5 flex items-center justify-center gap-1 text-xs opacity-80"
-                        style={{ color: "var(--danger)" }}
+                        onClick={() => openEdit(goal)}
+                        className="mt-2 flex items-center justify-center gap-1.5 rounded-lg p-1.5 text-[12.5px] opacity-60"
+                        style={{ color: "var(--text-muted)" }}
                       >
-                        <Trash2 size={12} /> حذف الهدف
+                        <Pencil size={13} /> تعديل
                       </button>
                     </div>
                   </motion.div>
@@ -270,49 +271,126 @@ export default function GoalsPage() {
             </div>
           );
         })}
+      </div>
 
-        <AnimatePresence>
-          {isAddingGoal ? (
-            <motion.div
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0 }}
-              className="flex gap-2 rounded-2xl border px-3 py-2.5"
-              style={{ borderColor: "var(--accent)", backgroundColor: "var(--bg-elevated)" }}
-            >
-              <input
-                autoFocus
-                value={newGoalTitle}
-                onChange={(e) => setNewGoalTitle(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") addGoal();
-                  if (e.key === "Escape") setIsAddingGoal(false);
-                }}
-                placeholder="عنوان الهدف..."
-                className="flex-1 bg-transparent text-sm outline-none"
-              />
-              <button
-                onClick={addGoal}
-                className="rounded-lg px-3.5 py-1 text-[13px] text-white"
-                style={{ backgroundColor: "var(--accent)" }}
-              >
-                إضافة
-              </button>
-            </motion.div>
-          ) : (
+      {/* Add goal sheet */}
+      <AnimatePresence>
+        {addOpen && (
+          <Sheet title="إضافة هدف جديد" onClose={() => setAddOpen(false)}>
+            <input
+              autoFocus
+              value={addTitle}
+              onChange={(e) => setAddTitle(e.target.value)}
+              placeholder="عنوان الهدف..."
+              className="mb-3 w-full rounded-2xl border px-3.5 py-3 text-sm outline-none"
+              style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-elevated)", color: "var(--text)" }}
+            />
+            <p className="mb-2 text-[12.5px]" style={{ color: "var(--text-muted)" }}>
+              خطوات الهدف (اختياري)
+            </p>
+            <div className="mb-3 flex flex-col gap-2">
+              {addSteps.map((step, i) => (
+                <div key={i} className="flex gap-1.5">
+                  <input
+                    value={step}
+                    onChange={(e) =>
+                      setAddSteps((prev) => prev.map((s, idx) => (idx === i ? e.target.value : s)))
+                    }
+                    placeholder={`خطوة ${i + 1}...`}
+                    className="flex-1 rounded-xl border px-3 py-2.5 text-[13px] outline-none"
+                    style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-elevated)", color: "var(--text)" }}
+                  />
+                  {addSteps.length > 1 && (
+                    <button
+                      onClick={() => setAddSteps((prev) => prev.filter((_, idx) => idx !== i))}
+                      className="px-1 opacity-50"
+                    >
+                      <X size={16} color="var(--danger)" />
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
             <button
-              onClick={() => {
-                setIsAddingGoal(true);
-                setNewGoalTitle("");
-              }}
-              className="flex items-center justify-center gap-1.5 rounded-2xl border border-dashed py-2.5 text-[13.5px]"
+              onClick={() => setAddSteps((prev) => [...prev, ""])}
+              className="mb-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed py-2.5 text-[12.5px]"
               style={{ borderColor: "var(--border)", color: "var(--accent)" }}
             >
-              <Plus size={15} /> إضافة هدف
+              <Plus size={13} /> إضافة خطوة
             </button>
-          )}
-        </AnimatePresence>
-      </div>
+            <button
+              onClick={confirmAdd}
+              className="w-full rounded-2xl py-3 text-sm font-semibold text-white"
+              style={{ backgroundColor: "var(--accent)" }}
+            >
+              إضافة الهدف
+            </button>
+          </Sheet>
+        )}
+      </AnimatePresence>
+
+      {/* Edit / delete goal sheet */}
+      <AnimatePresence>
+        {editingGoal && (
+          <Sheet title="تعديل الهدف" onClose={() => setEditingGoal(null)}>
+            <input
+              autoFocus
+              value={editTitle}
+              onChange={(e) => setEditTitle(e.target.value)}
+              className="mb-3 w-full rounded-2xl border px-3.5 py-3 text-sm outline-none"
+              style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-elevated)", color: "var(--text)" }}
+            />
+            <p className="mb-2 text-[12.5px]" style={{ color: "var(--text-muted)" }}>
+              الخطوات
+            </p>
+            <div className="mb-3 flex flex-col gap-2">
+              {editSteps.map((step, i) => (
+                <div key={step.id} className="flex gap-1.5">
+                  <input
+                    value={step.text}
+                    onChange={(e) =>
+                      setEditSteps((prev) =>
+                        prev.map((s, idx) => (idx === i ? { ...s, text: e.target.value } : s))
+                      )
+                    }
+                    className="flex-1 rounded-xl border px-3 py-2.5 text-[13px] outline-none"
+                    style={{ borderColor: "var(--border)", backgroundColor: "var(--bg-elevated)", color: "var(--text)" }}
+                  />
+                  <button
+                    onClick={() => setEditSteps((prev) => prev.filter((_, idx) => idx !== i))}
+                    className="px-1 opacity-50"
+                  >
+                    <X size={16} color="var(--danger)" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button
+              onClick={() =>
+                setEditSteps((prev) => [...prev, { id: crypto.randomUUID(), text: "", done: false }])
+              }
+              className="mb-4 flex w-full items-center justify-center gap-1.5 rounded-xl border border-dashed py-2.5 text-[12.5px]"
+              style={{ borderColor: "var(--border)", color: "var(--accent)" }}
+            >
+              <Plus size={13} /> إضافة خطوة
+            </button>
+            <button
+              onClick={confirmEdit}
+              className="mb-2.5 w-full rounded-2xl py-3 text-sm font-semibold text-white"
+              style={{ backgroundColor: "var(--accent)" }}
+            >
+              حفظ التعديل
+            </button>
+            <button
+              onClick={confirmDeleteGoal}
+              className="flex w-full items-center justify-center gap-2 rounded-2xl border py-3 text-sm font-semibold"
+              style={{ borderColor: "var(--danger)", color: "var(--danger)" }}
+            >
+              <Trash2 size={16} /> حذف الهدف
+            </button>
+          </Sheet>
+        )}
+      </AnimatePresence>
     </div>
   );
 }
