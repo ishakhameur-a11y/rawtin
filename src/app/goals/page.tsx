@@ -33,7 +33,7 @@ function Sheet({
   children: React.ReactNode;
 }) {
   return (
-    <div className="fixed inset-0 z-40 flex items-end">
+    <div className="fixed inset-0 z-[60] flex items-end">
       <div onClick={onClose} className="absolute inset-0 bg-black/45" />
       <motion.div
         initial={{ y: "100%" }}
