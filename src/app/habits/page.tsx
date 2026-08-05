@@ -350,7 +350,6 @@ export default function HabitsPage() {
               })}
             </div>
             <input
-              autoFocus
               value={newName}
               onChange={(e) => setNewName(e.target.value)}
               onKeyDown={(e) => {
@@ -376,7 +375,6 @@ export default function HabitsPage() {
         {editingHabit && (
           <Sheet title="تعديل العادة" onClose={() => setEditingHabit(null)}>
             <input
-              autoFocus
               value={editName}
               onChange={(e) => setEditName(e.target.value)}
               onKeyDown={(e) => {

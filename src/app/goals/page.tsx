@@ -278,7 +278,6 @@ export default function GoalsPage() {
         {addOpen && (
           <Sheet title="إضافة هدف جديد" onClose={() => setAddOpen(false)}>
             <input
-              autoFocus
               value={addTitle}
               onChange={(e) => setAddTitle(e.target.value)}
               placeholder="عنوان الهدف..."
@@ -334,7 +333,6 @@ export default function GoalsPage() {
         {editingGoal && (
           <Sheet title="تعديل الهدف" onClose={() => setEditingGoal(null)}>
             <input
-              autoFocus
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
               className="mb-3 w-full rounded-2xl border px-3.5 py-3 text-sm outline-none"

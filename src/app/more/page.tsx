@@ -17,6 +17,21 @@ import { Goal, goalProgress } from "@/lib/goals";
 import { useAccent, ACCENT_PRESETS } from "@/lib/accent-context";
 
 const BACKUP_KEYS = ["rawtin-habits", "rawtin-goals", "rawtin-theme", "rawtin-accent"];
+const DAYS_SHORT = ["سبت", "أحد", "اثنين", "ثلاثاء", "أربعاء", "خميس", "جمعة"];
+
+function startOfWeekSat(d: Date): Date {
+  const r = new Date(d);
+  r.setDate(r.getDate() - ((d.getDay() + 1) % 7));
+  return r;
+}
+function addDays(d: Date, n: number): Date {
+  const r = new Date(d);
+  r.setDate(r.getDate() + n);
+  return r;
+}
+function dateKeyOf(d: Date): string {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+}
 
 export default function MorePage() {
   const [habits, setHabits, habitsLoaded] = useLocalStorage<Habit[]>("rawtin-habits", []);
@@ -38,6 +53,18 @@ export default function MorePage() {
       goalsCompleted: goals.filter((g) => g.steps.length > 0 && goalProgress(g) === 100).length,
     };
   }, [habits, goals]);
+
+  const weeklyProductivity = useMemo(() => {
+    const start = startOfWeekSat(new Date());
+    return Array.from({ length: 7 }, (_, i) => {
+      const d = addDays(start, i);
+      const key = dateKeyOf(d);
+      if (habits.length === 0) return { pct: 0, day: d };
+      const done = habits.filter((h) => h.doneDates.includes(key)).length;
+      return { pct: Math.round((done / habits.length) * 100), day: d };
+    });
+  }, [habits]);
+  const avgProductivity = Math.round(weeklyProductivity.reduce((s, v) => s + v.pct, 0) / 7);
 
   function handleExport() {
     const data: Record<string, unknown> = {};
@@ -124,6 +151,44 @@ export default function MorePage() {
             </div>
           );
         })}
+      </div>
+
+      {/* Weekly productivity chart */}
+      <div
+        className="mb-3.5 rounded-[22px] border p-4"
+        style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
+      >
+        <div className="mb-3 flex items-center justify-between">
+          <p className="text-sm font-semibold">إنتاجية هذا الأسبوع</p>
+          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+            المعدل {avgProductivity}%
+          </span>
+        </div>
+        <div className="flex h-24 items-end gap-2">
+          {weeklyProductivity.map((w, i) => (
+            <div key={i} className="flex flex-1 flex-col items-center gap-1.5">
+              <span
+                className="text-[9px] font-semibold"
+                style={{ color: w.pct >= 80 ? "var(--accent)" : "var(--text-muted)" }}
+              >
+                {w.pct}%
+              </span>
+              <div className="flex h-14 w-full items-end">
+                <div
+                  className="w-full rounded-md transition-all"
+                  style={{
+                    height: `${Math.max(w.pct, 3)}%`,
+                    backgroundColor: w.pct > 0 ? "var(--accent)" : "var(--border)",
+                    opacity: w.pct >= 80 ? 1 : 0.55,
+                  }}
+                />
+              </div>
+              <span className="text-[9px]" style={{ color: "var(--text-muted)" }}>
+                {DAYS_SHORT[i]}
+              </span>
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* Accent color */}
