@@ -10,6 +10,7 @@ import {
   Trash2,
   Check,
   AlertTriangle,
+  ChevronDown,
 } from "lucide-react";
 import { useLocalStorage } from "@/lib/useLocalStorage";
 import { Habit, computeStreak, totalHabitCompletions } from "@/lib/habits";
@@ -39,6 +40,7 @@ export default function MorePage() {
   const { accent, setAccent } = useAccent();
   const [confirmingReset, setConfirmingReset] = useState(false);
   const [toast, setToast] = useState<string | null>(null);
+  const [weekMenuOpen, setWeekMenuOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   function showToast(msg: string) {
@@ -54,16 +56,40 @@ export default function MorePage() {
     };
   }, [habits, goals]);
 
+  const weeksList = useMemo(() => {
+    const dates: Date[] = [];
+    habits.forEach((h) => {
+      if (h.createdAt) dates.push(new Date(h.createdAt));
+      h.doneDates.forEach((k) => {
+        const [y, m, d] = k.split("-").map(Number);
+        dates.push(new Date(y, m - 1, d));
+      });
+    });
+    const today = new Date();
+    const earliest = dates.length > 0 ? new Date(Math.min(...dates.map((d) => d.getTime()))) : today;
+    const earliestWeekStart = startOfWeekSat(earliest);
+    const currentWeekStart = startOfWeekSat(today);
+    const totalWeeks =
+      Math.round((currentWeekStart.getTime() - earliestWeekStart.getTime()) / (7 * 86400000)) + 1;
+    return Array.from({ length: Math.max(totalWeeks, 1) }, (_, i) => ({
+      index: i + 1,
+      start: addDays(earliestWeekStart, i * 7),
+    }));
+  }, [habits]);
+
+  const [weekIndex, setWeekIndex] = useState<number | null>(null);
+  const activeWeekIndex = weekIndex ?? weeksList.length;
+  const activeWeekStart = weeksList[activeWeekIndex - 1]?.start ?? startOfWeekSat(new Date());
+
   const weeklyProductivity = useMemo(() => {
-    const start = startOfWeekSat(new Date());
     return Array.from({ length: 7 }, (_, i) => {
-      const d = addDays(start, i);
+      const d = addDays(activeWeekStart, i);
       const key = dateKeyOf(d);
       if (habits.length === 0) return { pct: 0, day: d };
       const done = habits.filter((h) => h.doneDates.includes(key)).length;
       return { pct: Math.round((done / habits.length) * 100), day: d };
     });
-  }, [habits]);
+  }, [habits, activeWeekStart]);
   const avgProductivity = Math.round(weeklyProductivity.reduce((s, v) => s + v.pct, 0) / 7);
 
   function handleExport() {
@@ -158,11 +184,53 @@ export default function MorePage() {
         className="mb-3.5 rounded-[22px] border p-4"
         style={{ backgroundColor: "var(--bg-elevated)", borderColor: "var(--border)" }}
       >
-        <div className="mb-3 flex items-center justify-between">
-          <p className="text-sm font-semibold">إنتاجية هذا الأسبوع</p>
-          <span className="text-xs" style={{ color: "var(--text-muted)" }}>
+        <div className="relative mb-3 flex items-center justify-between">
+          <p className="text-sm font-semibold">
+            إنتاجية {activeWeekIndex === weeksList.length ? "هذا الأسبوع" : `الأسبوع ${activeWeekIndex}`}
+          </p>
+          <button
+            onClick={() => setWeekMenuOpen((o) => !o)}
+            className="flex items-center gap-1 rounded-lg px-2 py-1 text-xs"
+            style={{ color: "var(--text-muted)" }}
+          >
             المعدل {avgProductivity}%
-          </span>
+            <ChevronDown
+              size={14}
+              style={{ transform: weekMenuOpen ? "rotate(180deg)" : "none", transition: "transform 0.2s" }}
+            />
+          </button>
+
+          {weekMenuOpen && (
+            <>
+              <div className="fixed inset-0 z-30" onClick={() => setWeekMenuOpen(false)} />
+              <div
+                className="absolute left-0 top-8 z-40 max-h-52 w-32 overflow-y-auto rounded-xl border"
+                style={{
+                  borderColor: "var(--border)",
+                  backgroundColor: "var(--bg-elevated)",
+                  boxShadow: "0 8px 24px rgba(0,0,0,0.25)",
+                }}
+              >
+                {weeksList.map((w) => (
+                  <button
+                    key={w.index}
+                    onClick={() => {
+                      setWeekIndex(w.index);
+                      setWeekMenuOpen(false);
+                    }}
+                    className="block w-full px-3 py-2.5 text-start text-xs font-semibold"
+                    style={{
+                      backgroundColor:
+                        activeWeekIndex === w.index ? "color-mix(in srgb, var(--accent) 12%, transparent)" : "transparent",
+                      color: activeWeekIndex === w.index ? "var(--accent)" : "var(--text)",
+                    }}
+                  >
+                    {w.index === weeksList.length ? "الأسبوع الحالي" : `أسبوع ${w.index}`}
+                  </button>
+                ))}
+              </div>
+            </>
+          )}
         </div>
         <div className="flex h-24 items-end gap-2">
           {weeklyProductivity.map((w, i) => (
